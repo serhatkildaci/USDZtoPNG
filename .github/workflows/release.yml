@@ -1,0 +1,111 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '15.0'
+        
+    - name: Get version from tag
+      id: get_version
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+        else
+          VERSION=$(date +%Y%m%d-%H%M%S)
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+        
+    - name: Build Release
+      run: |
+        # Create build directories
+        mkdir -p build release
+        
+        # Build archive
+        xcodebuild archive \
+          -project USDZtoPNG.xcodeproj \
+          -scheme USDZtoPNG \
+          -configuration Release \
+          -archivePath build/USDZtoPNG.xcarchive \
+          -destination "platform=macOS" \
+          SKIP_INSTALL=NO \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO
+          
+        # Create ZIP
+        cd build
+        zip -r ../release/USDZtoPNG-${{ steps.get_version.outputs.VERSION }}.zip USDZtoPNG.xcarchive/Products/Applications/USDZtoPNG.app
+        cd ..
+        
+        # Show app info
+        APP_PATH="build/USDZtoPNG.xcarchive/Products/Applications/USDZtoPNG.app"
+        echo "App size: $(du -h "$APP_PATH" | cut -f1)"
+        ls -la release/
+        
+    - name: Create Release Notes
+      id: release_notes
+      run: |
+        cat > release_notes.md << 'EOF'
+        ## 🎯 What's New
+        
+        ### ✨ Features
+        - Professional 3D rendering with 6-light studio setup
+        - Individual X, Y, Z rotation controls with random options
+        - High-quality PNG output (1200x1200, 4x antialiasing)
+        - Batch processing with real-time progress tracking
+        - Modern drag-and-drop interface
+        
+        ### 🔧 Technical
+        - Built with SwiftUI and modern async/await patterns
+        - MVVM architecture for maintainable code
+        - Optimized for macOS 14.0+ with Swift 6.0
+        - Professional SceneKit rendering pipeline
+        
+        ### 📦 Installation
+        1. Download `USDZtoPNG-${{ steps.get_version.outputs.VERSION }}.zip`
+        2. Extract and drag `USDZtoPNG.app` to Applications
+        3. Launch and grant necessary permissions
+        
+        ### 🔧 Requirements
+        - **macOS 14.0 (Sonoma)** or later
+        - **Apple Silicon** or **Intel Mac**
+        
+        ---
+        
+        **🐛 Found a bug?** [Report it here](../../issues)
+        **💡 Feature idea?** [Start a discussion](../../discussions)
+        EOF
+        
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          release/USDZtoPNG-${{ steps.get_version.outputs.VERSION }}.zip
+        body_path: release_notes.md
+        name: "USDZtoPNG v${{ steps.get_version.outputs.VERSION }}"
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Upload Artifacts (for manual runs)
+      if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: USDZtoPNG-${{ steps.get_version.outputs.VERSION }}
+        path: release/USDZtoPNG-${{ steps.get_version.outputs.VERSION }}.zip 
